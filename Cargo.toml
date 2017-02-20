@@ -11,6 +11,6 @@ serde_json = "0.9"
 serde_derive = "0.9"
 rocket_contrib = "*"
 bson = "0.4"
-mongodb = "0.2.1"
+mongo_driver = "0.5.0"
 chrono = { version = "0.3", features = ["serde", "rustc-serialize"] }
 log = "*"

@@ -4,29 +4,26 @@
 extern crate rocket;
 extern crate serde_json;
 extern crate serde;
-extern crate mongodb;
+extern crate mongo_driver;
+extern crate chrono;
+extern crate rocket_contrib;
 #[macro_use(bson, doc)]
 extern crate bson;
-
-#[macro_use] extern crate rocket_contrib;
-#[macro_use] extern crate serde_derive;
-extern crate chrono;
-#[macro_use] extern crate log;
+#[macro_use]
+extern crate serde_derive;
 
 use rocket_contrib::JSON;
 
-use bson::{Bson, Document, EncoderError, DecoderError};
-use mongodb::{Client, ThreadedClient};
-use mongodb::coll::Collection;
-use mongodb::db::ThreadedDatabase;
-use serde::{Serialize, Deserialize};
-use chrono::prelude::*;
+use bson::{EncoderError, DecoderError};
+
+use std::sync::Arc;
+use mongo_driver::client::{ClientPool, Uri};
 
 use rocket::State;
 
 #[derive(Serialize, Deserialize)]
 struct StatusResponse {
-    status: String
+    status: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -36,41 +33,39 @@ pub struct User {
     pub name: String,
 }
 
-type MongoClient = std::sync::Arc<mongodb::ClientInner>;
 
 #[get("/status")]
 fn status() -> JSON<StatusResponse> {
-    JSON(StatusResponse{status: String::from("ok")})
+    JSON(StatusResponse { status: String::from("ok") })
 }
 
 
 #[post("/users", data = "<user>")]
-fn add_user(client: State<MongoClient>, user: JSON<User>) -> Result<JSON<User>, EncoderError> {
+fn add_user(pool: State<Arc<ClientPool>>, user: JSON<User>) -> Result<JSON<User>, EncoderError> {
+    let client = pool.pop();
     let user = user.into_inner();
-    let coll = client.db("fenrir").collection("users");
+    let db = client.get_database("fenrir");
+    let coll = db.get_collection("users");
     let b = bson::to_bson(&user)?;
     if let bson::Bson::Document(document) = b {
-        coll.insert_one(document, None).unwrap();
+        coll.insert(&document, None).unwrap();
     }
     Ok(JSON(user))
 }
 
 #[get("/users/<id>")]
-fn get_user(client: State<MongoClient>, id: &str) -> Result<JSON<User>, DecoderError> {
-    info!("start get db: {:?}", Local::now());
-    let coll = client.db("fenrir").collection("users");
-    info!("finish get db: {:?}", Local::now());
-    let item = coll.find_one(Some(doc!{"_id" => id}), None).ok().expect("Document not found");
-    info!("finish request: {:?}", Local::now());
-    let user = bson::from_bson(bson::Bson::Document(item.unwrap()))?;
-    info!("to bson: {:?}", Local::now());
+fn get_user(pool: State<Arc<ClientPool>>, id: &str) -> Result<JSON<User>, DecoderError> {
+    let client = pool.pop();
+    let db = client.get_database("fenrir");
+    let coll = db.get_collection("users");
+    let mut item = coll.find(&doc!{"_id" => id}, None).ok().expect("Document not found");
+    let user = bson::from_bson(bson::Bson::Document(item.next().unwrap().unwrap()))?;
     Ok(JSON(user))
 }
 
 
 fn main() {
-    let client = Client::with_uri("mongodb://localhost:27017")
-                         .expect("Failed to initialize client.");
-    rocket::ignite().manage(client).mount("/", routes![status, add_user, get_user]).launch();
+    let uri = Uri::new("mongodb://localhost:27017/").unwrap();
+    let pool = Arc::new(ClientPool::new(uri.clone(), None));
+    rocket::ignite().manage(pool).mount("/", routes![status, add_user, get_user]).launch();
 }
-
