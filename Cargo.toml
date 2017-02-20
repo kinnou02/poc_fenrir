@@ -1,0 +1,16 @@
+[package]
+name = "fenrir"
+version = "0.1.0"
+authors = ["Alexandre Jacquin <alexandre.jacquin@canaltp.fr>"]
+
+[dependencies]
+rocket = "0.2.0"
+rocket_codegen = "0.2.0"
+serde = "0.9"
+serde_json = "0.9"
+serde_derive = "0.9"
+rocket_contrib = "*"
+bson = "0.4"
+mongodb = "0.2.1"
+chrono = { version = "0.3", features = ["serde", "rustc-serialize"] }
+log = "*"
